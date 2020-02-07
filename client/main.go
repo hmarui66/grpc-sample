@@ -133,6 +133,14 @@ func closerClose(c io.Closer) {
 	}
 }
 
+func conn(opts []grpc.DialOption) *grpc.ClientConn {
+	conn, err := grpc.Dial(*serverAddr, opts...)
+	if err != nil {
+		log.Fatalf("failed to dial: %v", err)
+	}
+	return conn
+}
+
 func main() {
 	flag.Parse()
 	var opts []grpc.DialOption
@@ -150,16 +158,31 @@ func main() {
 	}
 
 	opts = append(opts, grpc.WithBlock())
-	conn, err := grpc.Dial(*serverAddr, opts...)
-	if err != nil {
-		log.Fatalf("failed to dial: %v", err)
-	}
+	conn := conn(opts)
 	defer closerClose(conn)
 	client := pb.NewRouteGuideClient(conn)
 
 	switch flag.Arg(0) {
 	case "sample":
 		sample(client)
+	case "unary":
+		unaryMulti(client)
+	case "unary-non-reuse-cli":
+		unaryMultiNonReuseCli(conn)
+	case "unary-non-reuse-conn":
+		closerClose(conn)
+		unaryMultiNonReuseConn(opts)
+	case "stream":
+		streamMulti(client)
+	case "stream-non-reuse-cli":
+		streamMultiNonReuseCli(conn)
+	case "stream-non-reuse-conn":
+		closerClose(conn)
+		streamMultiNonReuseConn(opts)
+	case "keep":
+		keep(client)
+	case "keep-without-first-call":
+		keepWithoutFirstCall(client)
 	default:
 		log.Fatalf("invalid command args")
 	}
