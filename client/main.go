@@ -5,7 +5,8 @@ import (
 	"flag"
 	"io"
 	"log"
-	"math/rand"
+	"os"
+	"path/filepath"
 	"time"
 
 	pb "github.com/hmarui66/grpc-sample/proto"
@@ -53,28 +54,37 @@ func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 		}
 		log.Println(feature)
 	}
-
 }
 
-func runRecordRoute(client pb.RouteGuideClient) {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	pointCount := int(r.Int31n(100)) + 2
-	var points []*pb.Point
-	for i := 0; i < pointCount; i++ {
-		points = append(points, randomPoint(r))
+func runRecordImage(client pb.RouteGuideClient) {
+	f, err := os.Open(filepath.Join("assets", "sample.jpg"))
+	if err != nil {
+		log.Fatalf("failed to open image: %v", err)
 	}
-	log.Printf("Traversing %d points.", len(points))
+	defer closerClose(f)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	stream, err := client.RecordRoute(ctx)
+	stream, err := client.RecordLocationImage(ctx)
 	if err != nil {
 		log.Printf("%v.RecordRoute(_) = _, %v", client, err)
 		return
 	}
-	for _, point := range points {
-		if err := stream.Send(point); err != nil {
-			log.Printf("%v.Send(%v) = %v", stream, point, err)
-			return
+
+	var b [4096 * 1000]byte
+	for {
+		n, err := f.Read(b[:])
+		if err != nil {
+			if err != io.EOF {
+				log.Fatalf("failed to read image data: %v", err)
+			}
+			break
+		}
+		err = stream.Send(&pb.Image{
+			Data: b[:n],
+		})
+		if err != nil {
+			log.Printf("failed to send a chunked data: %v", err)
 		}
 	}
 	reply, err := stream.CloseAndRecv()
@@ -82,56 +92,7 @@ func runRecordRoute(client pb.RouteGuideClient) {
 		log.Printf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
 		return
 	}
-	log.Printf("Route summary: %v", reply)
-}
-
-func runRouteChat(client pb.RouteGuideClient) {
-	notes := []*pb.RouteNote{
-		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "First message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "Second message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "Third message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "Fourth message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "Fifth message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "Sixth message"},
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	stream, err := client.RouteChat(ctx)
-	if err != nil {
-		log.Fatalf("%v.RouteChat(_) = _, %v", client, err)
-	}
-	waitc := make(chan struct{})
-	go func() {
-		defer close(waitc)
-		for {
-			in, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				log.Printf("failed to receive a note: %v", err)
-				return
-			}
-			log.Printf("Got message %s at point(%d, %d)", in.Message, in.Location.Latitude, in.Location.Longitude)
-
-		}
-	}()
-	for _, note := range notes {
-		if err := stream.Send(note); err != nil {
-			log.Printf("failed to send a note: %v", err)
-			return
-		}
-	}
-	if err := stream.CloseSend(); err != nil {
-		log.Printf("failed to close sending: %v", err)
-	}
-	<-waitc
-}
-
-func randomPoint(r *rand.Rand) *pb.Point {
-	lat := (r.Int31n(180) - 90) * 1e7
-	long := (r.Int31n(360) - 180) * 1e7
-	return &pb.Point{Latitude: lat, Longitude: long}
+	log.Printf("Image size: %v", reply)
 }
 
 func closerClose(c io.Closer) {
@@ -170,8 +131,6 @@ func main() {
 	client := pb.NewRouteGuideClient(conn)
 
 	switch flag.Arg(0) {
-	case "sample":
-		sample(client)
 	case "unary":
 		unaryMulti(client)
 	case "unary-non-reuse-cli":
@@ -196,6 +155,12 @@ func main() {
 	case "many-conn-stream":
 		closerClose(conn)
 		manyConnStream(opts)
+	case "stream-image":
+		closerClose(conn)
+		streamImage(client)
+	case "many-conn-stream-image":
+		closerClose(conn)
+		manyConnStreamImage(opts)
 	default:
 		log.Fatalf("invalid command args")
 	}

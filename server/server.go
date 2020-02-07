@@ -113,6 +113,22 @@ func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error
 	}
 }
 
+func (s *routeGuideServer) RecordLocationImage(stream pb.RouteGuide_RecordLocationImageServer) error {
+	var size int32
+	for {
+		chucked, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&pb.ImageSize{
+				Size: size,
+			})
+		}
+		if err != nil {
+			return err
+		}
+		size += int32(len(chucked.Data))
+	}
+}
+
 func (s *routeGuideServer) loadFeatures(filePath string) {
 	var data []byte
 	if filePath != "" {
@@ -201,6 +217,7 @@ func main() {
 	}
 	grpcServer := grpc.NewServer(opts...)
 	pb.RegisterRouteGuideServer(grpcServer, newServer())
+
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
