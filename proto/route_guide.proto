@@ -44,6 +44,12 @@ service RouteGuide {
     // RouteSummary when traversal is completed.
     rpc RecordRoute(stream Point) returns (RouteSummary) {}
 
+    // A client-to-server streaming RPC.
+    //
+    // Accepts a stream of image bytes, returning a image size
+    // when transporting is completed.
+    rpc RecordLocationImage(stream Image) returns (ImageSize) {}
+
     // A Bidirectional streaming RPC.
     //
     // Accepts a stream of RouteNotes sent while a route is being traversed,
@@ -107,4 +113,12 @@ message RouteSummary {
 
     // The duration of the traversal in seconds.
     int32 elapsed_time = 4;
+}
+
+message Image {
+    bytes data = 1;
+}
+
+message ImageSize {
+    int32 size = 1;
 }
