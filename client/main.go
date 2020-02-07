@@ -27,7 +27,8 @@ func printFeature(client pb.RouteGuideClient, point *pb.Point) {
 	defer cancel()
 	feature, err := client.GetFeature(ctx, point)
 	if err != nil {
-		log.Fatalf("%v.GetFeatures(_) = _, %v: ", client, err)
+		log.Printf("%v.GetFeatures(_) = _, %v: ", client, err)
+		return
 	}
 	log.Println(feature)
 }
@@ -38,7 +39,8 @@ func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 	defer cancel()
 	stream, err := client.ListFeatures(ctx, rect)
 	if err != nil {
-		log.Fatalf("%v.ListFeatures(_) = _, %v", client, err)
+		log.Printf("%v.ListFeatures(_) = _, %v", client, err)
+		return
 	}
 	for {
 		feature, err := stream.Recv()
@@ -46,7 +48,8 @@ func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 			break
 		}
 		if err != nil {
-			log.Fatalf("%v.ListFeatures(_) = _, %v", client, err)
+			log.Printf("%v.ListFeatures(_) = _, %v", client, err)
+			return
 		}
 		log.Println(feature)
 	}
@@ -65,17 +68,19 @@ func runRecordRoute(client pb.RouteGuideClient) {
 	defer cancel()
 	stream, err := client.RecordRoute(ctx)
 	if err != nil {
-		log.Fatalf("%v.RecordRoute(_) = _, %v", client, err)
+		log.Printf("%v.RecordRoute(_) = _, %v", client, err)
+		return
 	}
 	for _, point := range points {
 		if err := stream.Send(point); err != nil {
-			log.Fatalf("%v.Send(%v) = %v", stream, point, err)
+			log.Printf("%v.Send(%v) = %v", stream, point, err)
+			return
 		}
 	}
 	reply, err := stream.CloseAndRecv()
 	if err != nil {
-
-		log.Fatalf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		log.Printf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		return
 	}
 	log.Printf("Route summary: %v", reply)
 }
@@ -97,14 +102,15 @@ func runRouteChat(client pb.RouteGuideClient) {
 	}
 	waitc := make(chan struct{})
 	go func() {
+		defer close(waitc)
 		for {
 			in, err := stream.Recv()
 			if err == io.EOF {
-				close(waitc)
 				return
 			}
 			if err != nil {
-				log.Fatalf("failed to receive a note: %v", err)
+				log.Printf("failed to receive a note: %v", err)
+				return
 			}
 			log.Printf("Got message %s at point(%d, %d)", in.Message, in.Location.Latitude, in.Location.Longitude)
 
@@ -112,7 +118,8 @@ func runRouteChat(client pb.RouteGuideClient) {
 	}()
 	for _, note := range notes {
 		if err := stream.Send(note); err != nil {
-			log.Fatalf("failed to send a note: %v", err)
+			log.Printf("failed to send a note: %v", err)
+			return
 		}
 	}
 	if err := stream.CloseSend(); err != nil {
@@ -183,6 +190,12 @@ func main() {
 		keep(client)
 	case "keep-without-first-call":
 		keepWithoutFirstCall(client)
+	case "many-conn":
+		closerClose(conn)
+		manyConn(opts)
+	case "many-conn-stream":
+		closerClose(conn)
+		manyConnStream(opts)
 	default:
 		log.Fatalf("invalid command args")
 	}
