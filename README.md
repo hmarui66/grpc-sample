@@ -6,7 +6,7 @@ gRPC の動作確認用リポジトリ。
 
 https://github.com/grpc/grpc-go/tree/master/examples/route_guide
  
-## Run server
+## Start server
 
 ```
 go run server/*.go
@@ -36,3 +36,24 @@ go run server/*.go
 proto ファイルを修正した場合は以下を実行
 
 `./protoc.sh`
+
+## Run with Envoy
+
+### Start server
+
+```
+docker build -t grpc-sample-server .
+docker run --rm -it --name grpc-sample-server1 grpc-sample-server
+docker run --rm -it --name grpc-sample-server2 grpc-sample-server
+```
+
+### Start Envoy
+
+```
+docker run \
+    --name envoy --rm --publish 8080:80 --publish 8081:8081 \
+    --link grpc-sample-server1 \
+    --link grpc-sample-server2 \
+    -v $PWD/envoy:/etc/envoy \
+    envoyproxy/envoy:v1.9.0
+``` 
